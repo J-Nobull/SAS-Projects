@@ -1,16 +1,3 @@
-/*In general, how do we classify?  
-	1. Look at the data 
-	2. Look at variable name 
-	3. Look at PROC MEANS 
-	4. Look at the data dictionary
-	5. Look at PROC FREQ 
-file info
-	Numeric ======> 
-	Date =========> 	
-	Categorical ==> 
-	Character ====>	
-*/
-
 	/*	load SAS file*/
 libname sasload '/home/u64005990/my_shared_file_links/kevinduffy-deno1/Datafiles/Homework 1';
    data data610.CNSSfile; set sasload.donor_census2; run;
