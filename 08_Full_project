@@ -1,0 +1,313 @@
+    /*  load file*/
+proc import datafile="/home/u64005990/ANA625/data/YRBS_2021.xlsx"
+    out=YRBS_load
+    dbms=xlsx
+    replace;
+    getnames=yes;
+run;
+
+data YRBS_clean;
+    set YRBS_load;
+    if cmiss(of _all_) = 0; /* Retain rows with no missing values */
+run;
+
+    /* CONVERT VARS */
+data YRBS_labl;
+    set YRBS_clean;
+    label 
+        sexuality = "Categorical: Sexuality"
+        race      = "Categorical: Race"
+        depression = "Binary: Depression"
+        sex       = "Binary: Sex"
+        online    = "Ordinal: Online Activity"
+        age       = "Ordinal: Age Group";
+run;
+
+data YRBS_A;
+    set YRBS_labl;
+    temp_MDD = input(DEPRESSION, 8.);
+    temp_ONLINE = input(Online_Use, 8.);
+    temp_AGE = input(AGES, 8.);
+    temp_SEX = input(Gender, 8.);
+    temp_SEXUALITY = input(Sex_Identity, 8.);
+    temp_RACE = input(Ethnic_Race, 8.);
+    drop DEPRESSION Online_Use AGES Gender Sex_Identity Ethnic_Race;
+run;
+
+    /* Create subset */
+data YRBS_C;
+    set YRBS_A;
+    where temp_MDD in (1, 2) and
+          temp_ONLINE in (1, 2, 3, 4, 5, 6) and
+          temp_AGE in (1, 2, 3, 4, 5, 6, 7) and
+          temp_SEX in (1, 2) and
+          temp_SEXUALITY in (1, 2, 3, 4, 5, 6) and
+          temp_RACE in (1, 2, 3, 4, 5, 6, 7, 8);
+
+    /* Recode DEPRESSION */
+    if temp_MDD = 2 then MDD = 0; /* No episodes */
+    else if temp_MDD = 1 then MDD = 1; /* One or more episodes of MDD */
+
+    /* Recode ONLINE */
+    if temp_ONLINE in (1, 2) then ONLINE = 0; /* Less than 2 hrs/day */
+    else if temp_ONLINE in (3, 4) then ONLINE = 1; /* 2-4 hrs/day */
+    else if temp_ONLINE in (5, 6) then ONLINE = 2; /* 4 or more hrs/day */
+
+    /* Recode AGE */
+    if temp_AGE in (1, 2, 3) then AGE = 0;   /* 14 years old or younger */
+    else if temp_AGE = 4 then AGE = 1;       /* 15 years old */
+    else if temp_AGE = 5 then AGE = 2;       /* 16 years old */
+    else if temp_AGE in (6, 7) then AGE = 3; /* 17 years and older */
+
+    /* Recode SEX */
+    if temp_SEX = 2 then SEX = 0; /* Male */
+    else if temp_SEX = 1 then SEX = 1; /* Female */
+
+    /* Recode SEXUAL_IDENTITY */
+    if temp_SEXUALITY = 1 then SEXUALITY = 0; /* Heterosexual (straight) */
+    else if temp_SEXUALITY in (2, 3) then SEXUALITY = 1; /* Lesbian, Gay, or Bisexual */
+    else if temp_SEXUALITY in (4, 5, 6) then SEXUALITY = 2; /* Other/unsure */
+
+    /* Recode RACE_ETHNICITY */
+    if temp_RACE = 5 then RACE = 0; /* White */
+    else if temp_RACE in (6, 7) then RACE = 1; /* Hispanic/Latino */
+    else if temp_RACE = 3 then RACE = 2; /* Black/African-American */
+    else if temp_RACE in (1, 2, 4, 8) then RACE = 3; /* Asian, Pacific Islander, Native, etc. */
+
+    drop temp_MDD temp_ONLINE temp_AGE temp_SEX temp_SEXUALITY temp_RACE;
+run;
+
+    /* Inspect data */
+proc contents data=YRBS_C; run;
+proc freq data=YRBS_C;
+    tables AGE SEX SEXUALITY RACE MDD ONLINE; run;
+proc means data=YRBS_C n nmiss min median mean max; var AGE ONLINE;
+run;
+
+    /* Chi-square tests for associations */
+proc freq data=YRBS_C;
+    tables ONLINE*(AGE SEX SEXUALITY RACE)/ chisq;
+run;
+
+proc freq data=YRBS_C;
+    tables MDD*(ONLINE AGE SEX SEXUALITY RACE)/ chisq;
+run;
+
+proc logistic data=YRBS_C;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model ONLINE = AGE SEX RACE SEXUALITY;
+run;
+
+proc logistic data=YRBS_C;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = ONLINE AGE SEX RACE SEXUALITY;
+run;
+
+    /* Logistic Regression SATURATED*/
+proc logistic data=YRBS_C descending;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = AGE SEX SEXUALITY RACE SEXUALITY*AGE*ONLINE SEXUALITY*SEX*RACE;
+run;
+proc logistic data=YRBS_C descending;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = AGE SEX SEXUALITY RACE SEXUALITY*AGE*ONLINE SEXUALITY*SEX*RACE / lackfit;
+run;
+    /* Main effects model */
+proc logistic data=YRBS_C descending;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = AGE SEX SEXUALITY RACE;
+run;
+
+/* Two-way interactions */
+proc logistic data=YRBS_C descending;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = AGE SEX SEXUALITY RACE SEXUALITY*AGE SEXUALITY*ONLINE SEXUALITY*SEX;
+run;
+
+/* Full (saturated) model */
+proc logistic data=YRBS_C descending;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = AGE SEX SEXUALITY RACE SEXUALITY*AGE*ONLINE SEXUALITY*SEX*RACE;
+run;
+proc logistic data=YRBS_C descending;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = AGE SEX SEXUALITY RACE SEXUALITY*AGE*ONLINE SEXUALITY*SEX*RACE
+        / selection=stepwise slentry=0.05 slstay=0.05;
+run;
+data YRBS_C_interactions;
+    set YRBS_C;
+    interaction1 = SEXUALITY * AGE * ONLINE; /* First interaction */
+    interaction2 = SEXUALITY * SEX * RACE;  /* Second interaction */
+run;
+proc reg data=YRBS_C_interactions;
+    model MDD = AGE SEX SEXUALITY RACE interaction1 interaction2 / vif;
+run;
+    /* Reduced model */
+proc logistic data=YRBS_C;
+    class AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = AGE SEX RACE SEXUALITY;
+run;
+
+
+    /* Check for Multicollinearity*/
+proc reg data=YRBS_C;
+    model MDD = ONLINE AGE SEX RACE SEXUALITY / vif;
+run;
+
+    /* GOF */
+proc logistic data=YRBS_C descending;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = ONLINE AGE SEX RACE SEXUALITY / lackfit;
+run;
+
+    /* check for confounders */
+proc logistic data=YRBS_C;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = ONLINE AGE SEX RACE SEXUALITY;
+    oddsratio ONLINE;
+    title "Full Model with All Variables"; run;
+proc logistic data=YRBS_C;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = ONLINE SEX RACE SEXUALITY;
+    oddsratio ONLINE;
+    title "Without AGE"; run;
+proc logistic data=YRBS_C;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = ONLINE AGE RACE SEXUALITY;
+    oddsratio ONLINE;
+    title "Without SEX"; run;
+proc logistic data=YRBS_C;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = ONLINE AGE SEX SEXUALITY;
+    oddsratio ONLINE;
+    title "Without RACE"; run;
+proc logistic data=YRBS_C;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = ONLINE AGE SEX RACE;
+    oddsratio ONLINE;
+    title "Without SEXUALITY";
+run;
+
+    /* Sensitivity Analysis -- changed binning of ONLINE; ran proc freq 
+    tables and logistic regression for all 6 SCREEN TIME caategories as 
+    well as a binary (0= online less than 3 hrs, 1=online 3 or more hrs) */
+
+proc logistic data=YRBS_C;
+    class AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = AGE SEX RACE SEXUALITY;
+    oddsratio AGE;
+    oddsratio SEX;
+    oddsratio RACE;
+    oddsratio SEXUALITY;
+    title "Logistic Regression Analysis: ORs & CIs";
+run;
+
+    /* check AIC */
+proc logistic data=YRBS_C;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = ONLINE AGE SEX RACE SEXUALITY; run;
+proc logistic data=YRBS_C;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = AGE SEX RACE SEXUALITY;
+run;
+
+    /* Spearman & Tau */
+proc corr data=YRBS_C spearman;
+    var AGE ONLINE;
+run;
+proc corr data=YRBS_C kendall;
+    var AGE ONLINE;
+run;
+    /* Chi-Square Test for Trend, Mann-Whitney U Test, Kruskal-Wallis Test */
+proc freq data=YRBS_C;
+    tables MDD*ONLINE / trend chisq;
+run;
+proc npar1way data=YRBS_C wilcoxon;
+    class MDD; /* Binary outcome */
+    var ONLINE; /* Ordinal predictor */
+run;
+proc npar1way data=YRBS_C wilcoxon;
+    class MDD; /* Binary grouping variable */
+    var ONLINE; /* Ordinal predictor */
+run;
+
+proc logistic data=YRBS_A;
+    class temp_ONLINE (ref='1') temp_AGE(ref='1') temp_SEX(ref='2') temp_SEXUALITY(ref='1') temp_RACE(ref='5') / param=ref;
+    model temp_ONLINE = temp_AGE temp_SEX temp_SEXUALITY temp_RACE;
+run;
+
+proc logistic data=YRBS_A;
+    class temp_AGE(ref='1') temp_SEX(ref='2') temp_SEXUALITY(ref='1') temp_RACE(ref='5') / param=ref;
+    model temp_MDD(event='2') = temp_AGE temp_SEX temp_SEXUALITY temp_RACE;
+run;
+
+
+ods output classification=ctable;
+proc logistic data=YRBS_C descending;
+    class ONLINE (ref='0') AGE(ref='0') SEX(ref='0') RACE(ref='0') SEXUALITY(ref='0') / param=ref;
+    model MDD(event='1') = ONLINE AGE SEX RACE SEXUALITY / ctable; 
+    roc 'Model 2 (omit ONLINE TIME)' AGE SEX RACE SEXUALITY; 
+    roccontrast / estimate=allpairs;
+run;
+
+
+proc freq data=YRBS_C;
+    tables SEX*diabetes*obesity / cmh; run;
+
+
+ods output classification=ctable;
+proc logistic data=YRBS_C descending;
+    class BMI(ref='1') EXERCISE(ref='0') SEX(ref='0') / param=ref;
+    model DIABETES = BMI EXERCISE SEX / ctable; 
+    roc 'Model 2 (omit SEX)' BMI EXERCISE; 
+    roccontrast / estimate=allpairs;
+run;
+
+/*  Table 3 */
+
+proc logistic data=YRBS_C; 
+    class DIABETES(ref='0') BMI(ref='1') EXERCISE(ref='0') SEX(ref='0') / param=ref;
+    model DIABETES = BMI EXERCISE SEX; 
+run;
+
+/* week 3 Updates to Tables 2/3 */
+
+proc logistic data=YRBS_C; 
+    class DIABETES (ref='0') SEX (ref='0') EXERCISE (ref='0') / param=ref; 
+    model DIABETES = SEX EXERCISE; run;
+proc logistic data=YRBS_C; 
+    class DIABETES (ref='0') SEX (ref='0') EXERCISE (ref='0') / param=ref; 
+    model DIABETES = SEX EXERCISE / aggregate scale=none; run;
+proc logistic data=YRBS_C;
+    class DIABETES(ref="0") SEX(ref="0") EXERCISE(ref="0") / param=ref;
+    model DIABETES = SEX EXERCISE SEX*EXERCISE / aggregate scale=none; run;
+proc logistic data=YRBS_C;
+    class DIABETES (ref='0') SEX (ref='0') AGECAT (ref='1') / param=ref;
+    model DIABETES = SEX AGECAT; run;
+
+/* For AGECAT = N */
+proc logistic data=YRBS_C;
+    class DIABETES (ref='0') SEX (ref='0') / param=ref;
+    model DIABETES = SEX;
+    where AGECAT = 1; run;
+proc logistic data=YRBS_C;
+    class DIABETES (ref='0') SEX (ref='0') / param=ref;
+    model DIABETES = SEX;
+    where AGECAT = 2; run;
+proc logistic data=YRBS_C;
+    class DIABETES (ref='0') SEX (ref='0') / param=ref;
+    model DIABETES = SEX;
+    where AGECAT = 3; run;
+
+proc logistic data=YRBS_C;
+    class DIABETES (ref='0') SEX (ref='0') AGECAT (ref='1') / param=ref;
+    model DIABETES = SEX AGECAT / aggregate scale=none; run;
+proc logistic data=YRBS_C;
+    class DIABETES (ref='0') SEX (ref='0') AGECAT (ref='1') / param=ref;
+    model DIABETES = SEX AGECAT SEX*AGECAT;
+    oddsratio SEX / at (AGECAT = '1' '2' '3'); run;
+
+proc freq data=YRBS_C; 
+    tables (BMI SEX EXERCISE AGECAT EDUCATION GENERALHEALTH)*diabetes / chisq; run;
+
+/* END */
