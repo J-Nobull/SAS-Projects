@@ -1,0 +1,242 @@
+Case Study: SAS BRFSS 10 Categorical Table 3
+This case study will build on last week’s introduction to adjusted analyses 
+with categorical variables and dive into the area of model building.  
+There are many ways in which analysts come to a final model and we will 
+explore some of them in this case study.  The case study will end with a 
+more developed “Table 3”.  Continue using data from the Behavioral Risk 
+Factor Surveillance System Survey from 2010 to complete this case study.
+    The objective of this analysis is to investigate the association 
+    between diabetes and BMI after controlling for exercise, age, education, 
+    general health, and sex.  The outcome variable is DIABETES, and the 
+    variable of interest (exposure) is BMI.
+    Conduct a complete case analysis for this objective following these 
+    guidelines: 
+    1.  Use the raw variable _BMI4CAT and call it BMI
+    2.  Using the raw variable SEX, create a new two-level variable SEX (male=0, female=1) 
+    where male is category 1 of the raw variable and female is category 2
+    3.  Using the raw variable DIABETE2, create a new two-level variable DIABETES (no=0, 
+    yes=1) where yes is category 1 of the raw variable and no is category 3
+    4.  Using the raw variable EXERANY2, create a new two-level variable EXERCISE (no=0, 
+    yes=1) where yes is category 1 of the raw variable and no is category 2
+    5.  Using the raw variable GENHLTH, create a new three-level variable 
+    GENERALHEALTH where raw category 1 = 2; raw categories 2 and 3 = 1; raw 
+    categories 4 and 5 = 0
+    6.  Using the raw variable EDUCA, create a new three-level variable EDUCATION where 
+    raw categories 1 and 2 = 1; raw categories 3 and 4 = 2; raw categories 5 and 6 = 3
+    7.  Using the raw variable AGE, create a new three-level variable AGECAT where 
+    18<=age<=34 = 1; 35<=age<=54 = 2; 55<=age = 3
+    8.  For the complete case analysis, restrict your sample based on the following 
+    conditions:
+        a.  18<=AGE<=99 
+        b.  SEX: raw categories 1 and 2
+        c.  DIABETE2: raw categories 1 and 3
+        d.  EXERANY2: raw categories 1 and 2
+        e.  EDUCA: raw categories 1-6
+        f.  _BMI4CAT: raw categories 1-3
+        g.  GENHLTH: raw categories 1-5
+
+    /*  load file */
+libname DATA625 '/home/u64005990/ANA625/data' inencoding='latin1';
+    data CDC_load; set DATA625.CDC_10; run;
+
+    /* Create subset */
+data CDC_D;
+    set CDC_load(keep=AGE SEX DIABETE2 EXERANY2 EDUCA _BMI4CAT GENHLTH);
+    where (18<= AGE <=99) 
+    and SEX in (1, 2)
+    and DIABETE2 in (1, 3)
+    and EXERANY2 in (1, 2)
+    and EDUCA in (1, 2, 3, 4, 5, 6) 
+    and _BMI4CAT in (1, 2, 3) 
+    and GENHLTH in (1, 2, 3, 4, 5);
+
+    /* Recode AGE */
+    if 18<=age<=34  then AGECAT = 1;
+    else if 35<=age<=54  then AGECAT = 2;
+    else if 55<=age      then AGECAT = 3;
+
+    /* Recode SEX */
+    if SEX = 2 then SEX = 1;
+    else if SEX = 1 then SEX = 0;
+
+    /* Recode DIABETE2 */
+    if DIABETE2 = 1 then DIABETES = 1;
+    else if DIABETE2 = 3 then DIABETES = 0;
+
+    /* Recode EXERANY2 */
+    if EXERANY2 = 1 then EXERCISE = 1;
+    else if EXERANY2 = 2 then EXERCISE = 0; 
+    
+    /* Recode EDUCA: highest grade or year of school you completed? */
+    if EDUCA in (1, 2) then EDUCATION = 1; /* Elementary */
+    else if EDUCA in (3, 4) then EDUCATION = 2; /* HS */
+    else if EDUCA in (5, 6) then EDUCATION = 3; /* College */
+
+    /* Rename _BMI4CAT to BMI */
+    BMI = _BMI4CAT; 
+
+    /* Recode GENHLTH */
+    if GENHLTH = 1 then GENERALHEALTH = 2; /* Excellent */
+    else if GENHLTH in (2, 3) then GENERALHEALTH = 1; /* Good */
+    else if GENHLTH in (4, 5) then GENERALHEALTH = 0; /* Poor */
+run;
+data DATA625.CDC_D; set CDC_D; run;
+
+    /* Trim */
+data CDC_E; set CDC_D(keep=AGECAT SEX DIABETES EXERCISE EDUCATION BMI GENERALHEALTH); run;
+proc print data=CDC_E(obs=10); 
+run;
+data DATA625.CDC_E; set CDC_E; run;
+
+    /* Inspect data */
+proc contents data=CDC_E; run;
+proc means data=CDC_E n nmiss; run;
+proc freq data=CDC_E; 
+run;
+
+
+/* 1.a.)@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@*/
+proc logistic data=CDC_E; 
+    class DIABETES (ref='0') SEX (ref='0') EXERCISE (ref='0') / param=ref; 
+    model DIABETES = SEX EXERCISE; 
+run;
+
+/* 1.b.) */
+proc logistic data=CDC_E; 
+    class DIABETES (ref='0') SEX (ref='0') EXERCISE (ref='0') / param=ref; 
+    model DIABETES = SEX EXERCISE / aggregate scale=none; 
+run;
+
+/* 1.c.) */
+proc logistic data=CDC_E;
+    class DIABETES(ref="0") SEX(ref="0") EXERCISE(ref="0") / param=ref;
+    model DIABETES = SEX EXERCISE SEX*EXERCISE / aggregate scale=none;
+run;
+
+/* 2.a. */
+proc logistic data=CDC_E;
+    class DIABETES (ref='0') SEX (ref='0') AGECAT (ref='1') / param=ref;
+    model DIABETES = SEX AGECAT;
+run;
+
+/* 2.c. */
+/* For AGECAT = N */
+proc logistic data=CDC_E;
+    class DIABETES (ref='0') SEX (ref='0') / param=ref;
+    model DIABETES = SEX;
+    where AGECAT = 1; run;
+proc logistic data=CDC_E;
+    class DIABETES (ref='0') SEX (ref='0') / param=ref;
+    model DIABETES = SEX;
+    where AGECAT = 2; run;
+proc logistic data=CDC_E;
+    class DIABETES (ref='0') SEX (ref='0') / param=ref;
+    model DIABETES = SEX;
+    where AGECAT = 3;
+run;
+
+/* 2.d. */
+proc logistic data=CDC_E;
+    class DIABETES (ref='0') SEX (ref='0') AGECAT (ref='1') / param=ref;
+    model DIABETES = SEX AGECAT / aggregate scale=none; run;
+
+/* 2.e. */
+proc logistic data=CDC_E;
+    class DIABETES (ref='0') SEX (ref='0') AGECAT (ref='1') / param=ref;
+    model DIABETES = SEX AGECAT SEX*AGECAT;
+    oddsratio SEX / at (AGECAT = '1' '2' '3');
+run;
+
+/* 3. */
+proc freq data=CDC_E; 
+    tables (BMI SEX EXERCISE AGECAT EDUCATION GENERALHEALTH)*diabetes / chisq; 
+run;
+
+/* 5. */
+proc logistic data=CDC_E;
+    class DIABETES (ref='0') BMI (ref='1') SEX (ref='0') EXERCISE (ref='0') 
+          AGECAT (ref='1') EDUCATION (ref='1') GENERALHEALTH (ref='0') / param=ref;
+    model DIABETES = BMI SEX EXERCISE AGECAT EDUCATION GENERALHEALTH;
+    oddsratio BMI;
+    title "Full Model with All Variables";
+run;
+/* Model without SEX */
+proc logistic data=CDC_E;
+    class DIABETES (ref='0') BMI (ref='1') EXERCISE (ref='0') 
+          AGECAT (ref='1') EDUCATION (ref='1') GENERALHEALTH (ref='0') / param=ref;
+    model DIABETES = BMI EXERCISE AGECAT EDUCATION GENERALHEALTH;
+    oddsratio BMI;
+    title "Remove SEX";
+run;
+/* Model without EXERCISE */
+proc logistic data=CDC_E;
+    class DIABETES (ref='0') BMI (ref='1') SEX (ref='0') 
+          AGECAT (ref='1') EDUCATION (ref='1') GENERALHEALTH (ref='0') / param=ref;
+    model DIABETES = BMI SEX AGECAT EDUCATION GENERALHEALTH;
+    oddsratio BMI;
+    title "Remove EXERCISE";
+run;
+/* Model without AGECAT */
+proc logistic data=CDC_E;
+    class DIABETES (ref='0') BMI (ref='1') SEX (ref='0') EXERCISE (ref='0') 
+          EDUCATION (ref='1') GENERALHEALTH (ref='0') / param=ref;
+    model DIABETES = BMI SEX EXERCISE EDUCATION GENERALHEALTH;
+    oddsratio BMI;
+    title "Remove AGECAT";
+run;
+/* Model without EDUCATION */
+proc logistic data=CDC_E;
+    class DIABETES (ref='0') BMI (ref='1') SEX (ref='0') EXERCISE (ref='0') 
+          AGECAT (ref='1') GENERALHEALTH (ref='0') / param=ref;
+    model DIABETES = BMI SEX EXERCISE AGECAT GENERALHEALTH;
+    oddsratio BMI;
+    title "Remove EDUCATION";
+run;
+/* Model without GENERALHEALTH */
+proc logistic data=CDC_E;
+    class DIABETES (ref='0') BMI (ref='1') SEX (ref='0') EXERCISE (ref='0') 
+          AGECAT (ref='1') EDUCATION (ref='1') / param=ref;
+    model DIABETES = BMI SEX EXERCISE AGECAT EDUCATION;
+    oddsratio BMI;
+    title "Remove GENERALHEALTH";
+run;
+
+/* 6. */
+proc logistic data=CDC_E; 
+    class DIABETES (ref='0') BMI (ref='1') SEX (ref='0') EXERCISE (ref='0') 
+          AGECAT (ref='1') EDUCATION (ref='1') GENERALHEALTH (ref='0') / param=ref; 
+    model DIABETES = BMI SEX EXERCISE AGECAT EDUCATION GENERALHEALTH; 
+run;
+
+proc logistic data=CDC_E;
+    class DIABETES (ref='0') 
+          BMI (ref='1') 
+          SEX (ref='0') 
+          EXERCISE (ref='0') 
+          AGECAT (ref='1') 
+          EDUCATION (ref='1') 
+          GENERALHEALTH (ref='0') / param=ref;
+    model DIABETES = BMI SEX EXERCISE AGECAT EDUCATION GENERALHEALTH;
+    oddsratio BMI;
+    oddsratio SEX;
+    oddsratio EXERCISE;
+    oddsratio AGECAT;
+    oddsratio EDUCATION;
+    oddsratio GENERALHEALTH;
+    title "Logistic Regression Analysis: ORs & CIs";
+run;
+
+/* EXTRA CRED */
+proc logistic data=CDC_E;
+    class DIABETES (ref='0') SEX (ref='0') AGECAT (ref='1') / param=ref;
+    model DIABETES = SEX AGECAT SEX*AGECAT;
+    title "Logistic Regression with SEX*AGECAT Interaction";
+run;
+proc logistic data=CDC_E;
+    class DIABETES (ref='0') SEX (ref='0') AGECAT (ref='1') / param=ref;
+    model DIABETES = SEX AGECAT SEX*AGECAT;
+    oddsratio SEX / at (AGECAT = '1' '2' '3');
+    title "Odds Ratio Estimates for SEX at Each AGECAT Level";
+run;
+
+   /* END */
